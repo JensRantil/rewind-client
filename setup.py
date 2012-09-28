@@ -9,19 +9,19 @@ if py_version <= (2, 6):
 
 
 setup(
-    name='rewind',
-    version='0.1.4',
+    name='rewind-client',
+    version='0.1.0',
     author='Jens Rantil',
     author_email='jens.rantil@gmail.com',
     license='GNU AGPL, version 3',
-    url='https://github.com/JensRantil/rewind',
+    url='https://github.com/JensRantil/rewind-client',
     packages=[
         'rewind',
         'rewind.client',
         'rewind.client.test',
     ],
     namespace_packages=["rewind"],
-    description='Rewind is a (CQRS) event store that talks ZeroMQ.',
+    description='Python client for Rewind event store.',
     long_description=open('DESCRIPTION.rst').read(),
     classifiers=[
         "Development Status :: 4 - Beta",
