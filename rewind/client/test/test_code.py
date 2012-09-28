@@ -48,7 +48,7 @@ class TestCodeFormat(unittest.TestCase):
 
         # Currently two E301:s fail. I find those checks to be
         # buggy and will report them to the pep8 project on github.
-        self.assertEqual(result.total_errors, 2,
+        self.assertEqual(result.total_errors, 0,
                          "Found code syntax errors (and warnings).")
 
     def testPep257Conformance(self):
