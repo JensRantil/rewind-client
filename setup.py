@@ -44,6 +44,7 @@ setup(
         "pyzmq-static==2.1.11.2",
     ],
     tests_require=[
+        "rewind==0.1.4",
         "mock==0.8",
         "pep8==1.3.3",
         "pep257==0.2.0",
