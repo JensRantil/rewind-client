@@ -50,10 +50,5 @@ setup(
         "pep257==0.2.0",
     ],
     test_suite="rewind.client.test",
-    entry_points={
-        'console_scripts': [
-            'rewind = rewind.server.rewind:main',
-        ]
-    },
 )
 
