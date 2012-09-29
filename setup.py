@@ -10,7 +10,7 @@ if py_version <= (2, 6):
 
 setup(
     name='rewind-client',
-    version='0.1.0',
+    version='0.1.1',
     author='Jens Rantil',
     author_email='jens.rantil@gmail.com',
     license='GNU AGPL, version 3',
@@ -50,10 +50,6 @@ setup(
         "pep257==0.2.0",
     ],
     test_suite="rewind.client.test",
-    entry_points={
-        'console_scripts': [
-            'rewind = rewind.server.rewind:main',
-        ]
-    },
+    zip_safe=False,
 )
 
