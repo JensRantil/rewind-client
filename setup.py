@@ -50,6 +50,5 @@ setup(
         "pep257==0.2.0",
     ],
     test_suite="rewind.client.test",
-    zip_safe=False,
 )
 
