@@ -4,7 +4,7 @@ Rewind Client
 
 This is a Python client that talks to a `Rewind`_ event sourcing server.
 
-.. _Rewind: https://github.com/JensRantil/rewind-client
+.. _Rewind: https://github.com/JensRantil/rewind
 
 Installing
 ==========
