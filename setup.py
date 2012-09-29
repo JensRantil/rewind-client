@@ -9,30 +9,29 @@ if py_version <= (2, 6):
 
 
 setup(
-    name='rewind',
-    version='0.1.4',
+    name='rewind-client',
+    version='0.1.0',
     author='Jens Rantil',
     author_email='jens.rantil@gmail.com',
     license='GNU AGPL, version 3',
-    url='https://github.com/JensRantil/rewind',
+    url='https://github.com/JensRantil/rewind-client',
     packages=[
         'rewind',
-        'rewind.server',
-        'rewind.server.test',
+        'rewind.client',
+        'rewind.client.test',
     ],
     namespace_packages=["rewind"],
-    description='Rewind is a (CQRS) event store that talks ZeroMQ.',
+    description='Python client for Rewind event store.',
     long_description=open('DESCRIPTION.rst').read(),
     classifiers=[
         "Development Status :: 4 - Beta",
         "Environment :: No Input/Output (Daemon)",
         "Intended Audience :: Other Audience",
-        "License :: OSI Approved :: GNU Affero General Public License v3",
+        "License :: OSI Approved :: MIT License",
         "Natural Language :: English",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 2.7",
         "Programming Language :: Python :: 3.2",
-        "Topic :: Database :: Database Engines/Servers",
         "Topic :: Software Development :: Object Brokering",
         "Topic :: System :: Distributed Computing",
     ],
@@ -45,11 +44,12 @@ setup(
         "pyzmq-static==2.1.11.2",
     ],
     tests_require=[
+        "rewind==0.1.5",
         "mock==0.8",
         "pep8==1.3.3",
         "pep257==0.2.0",
     ],
-    test_suite="rewind.server.test",
+    test_suite="rewind.client.test",
     entry_points={
         'console_scripts': [
             'rewind = rewind.server.rewind:main',

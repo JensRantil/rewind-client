@@ -1,18 +1,9 @@
-# Rewind is an event store server written in Python that talks ZeroMQ.
+# rewind-client talks to rewind, an event store server.
+#
 # Copyright (C) 2012  Jens Rantil
 #
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# This program is distributed under the MIT License. See the file LICENSE.txt
+# for details.
 
 """Test overall Rewind execution."""
 from __future__ import print_function
@@ -31,88 +22,8 @@ import re
 
 import zmq
 
-import rewind.communicators as clients
+import rewind.client as clients
 import rewind.server.rewind as rewind
-
-
-@contextlib.contextmanager
-def _direct_stderr_to_stdout():
-    """Context manager for wrapping tests that prints to stderr.
-
-    Nosetests does not capture stderr.
-
-    """
-
-    real_stderr = sys.stderr
-    sys.stderr = sys.stdout
-    yield
-    sys.stderr = real_stderr
-
-
-class TestCommandLineExecution(unittest.TestCase):
-
-    """Tests various command line arguments for `rewind`."""
-
-    def setUp(self):
-        """Prepare each command line execution test."""
-        # See tearDown() why this one is defined
-        self.rewind = None
-
-    def tearDown(self):
-        """Making sure rewind is closed after each test."""
-        if self.rewind and self.rewind.isAlive():
-            # Making sure to close rewind if it has been defined
-            self.rewind.stop()
-            self.rewind = None
-
-    def testAtLeastOneEndpointRequired(self):
-        """Asserting we fail if no endpoint is defined."""
-        with _direct_stderr_to_stdout():
-            rewind = _RewindRunnerThread([])
-            rewind.start()
-            rewind.join(2)
-        self.assertFalse(rewind.isAlive())
-        self.assertEqual(rewind.exit_code, 2)
-
-    def testOnlyStreamingEndpointFails(self):
-        """Assert Rewind won't start with only streaming endpoint defined."""
-        with _direct_stderr_to_stdout():
-            rewind = _RewindRunnerThread(['--streaming-bind-endpoint',
-                                          'tcp://hello'])
-            rewind.start()
-            rewind.join(2)
-        self.assertFalse(rewind.isAlive())
-        self.assertEqual(rewind.exit_code, 2)
-
-    def testHelp(self):
-        """Testing commend line `--help` listing works."""
-        with _direct_stderr_to_stdout():
-            rewind = _RewindRunnerThread(['--help'])
-            rewind.start()
-            rewind.join(2)
-        self.assertFalse(rewind.isAlive())
-        self.assertEqual(rewind.exit_code, 0)
-
-    def testStartingWithPersistence(self):
-        """Testing starting and stopping from command line."""
-        datapath = tempfile.mkdtemp()
-        print("Using datapath:", datapath)
-
-        args = ['--incoming-bind-endpoint', 'tcp://127.0.0.1:8090',
-                '--streaming-bind-endpoint', 'tcp://127.0.0.1:8091',
-                '--datadir', datapath]
-        print(" ".join(args))
-        self.rewind = _RewindRunnerThread(args, 'tcp://127.0.0.1:8090')
-        self.rewind.start()
-
-        time.sleep(3)
-        self.assertTrue(self.rewind.isAlive(),
-                        "Rewind was not running for more than 3 seconds")
-
-        # Not removing this in tearDown for two reasons:
-        # 1. Datapath is not created in setUp()
-        # 2. If this test fails, we will keep the datapath that was created.
-        shutil.rmtree(datapath)
 
 
 class _RewindRunnerThread(threading.Thread):
