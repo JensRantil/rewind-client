@@ -11,7 +11,7 @@ Installing
 
 PyPi
 ----
-`rewind-client` `exists on PyPi`_. You can install it by issuing::
+``rewind-client`` `exists on PyPi`_. You can install it by issuing::
 
     $ pip install rewind-client
 
@@ -22,7 +22,7 @@ space. See documentation on `virtualenv` below on how to not do this.
 
 Manual install
 --------------
-`rewind-client` uses basic ``setuptools``. Installation can be used done as
+``rewind-client`` uses basic ``setuptools``. Installation can be used done as
 follows::
 
     $ git clone https://github.com/JensRantil/rewind-client.git
@@ -41,8 +41,8 @@ STUB.
 
 Developing
 ==========
-Getting started developing `rewind-client` is quite straightforward. The
-library uses `setuptools` and standard Python project layout for tests
+Getting started developing ``rewind-client`` is quite straightforward. The
+library uses ``setuptools`` and standard Python project layout for tests
 etcetera.
 
 Checking out
@@ -50,7 +50,7 @@ Checking out
 To start developing you need to install the ZeroMQ library on your system
 beforehand.
 
-This is how you check out the `rewind-client` library into a virtual
+This is how you check out the ``rewind-client`` library into a virtual
 environment::
 
     cd <your development directory>
@@ -60,7 +60,7 @@ environment::
 
 Workin' the code
 ----------------
-Every time you want to work on `rewind-client` you want to change
+Every time you want to work on ``rewind-client`` you want to change
 directory into the source folder and activate the virtual environment
 scope (so that you don't touch the global Python environment)::
 
@@ -84,7 +84,7 @@ after the whole test suite has been executed.
 As always, try to run the test suite *before* starting to mess with the
 code. That way you know nothing was broken beforehand.
 
-`The Rewind client central github repository`_ also has `Travis CI`
+`The Rewind client central github repository`_ also has Travis CI
 integration that can be accessed at
 http://travis-ci.org/#!/JensRantil/rewind-client Every time a pull request is
 being made to https://github.com/JensRantil/rewind-client, Travis CI will make
