@@ -29,7 +29,7 @@ follows::
     $ cd rewind-client
     $ python setup.py install
 
-However **NOTE**, that this will install Rewind client globally in your
+However, **NOTE** that this will install Rewind client globally in your
 Python environment and is NOT recommended. Please refer to virtualenv_
 on how to create a virtual environment.
 
