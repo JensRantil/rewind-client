@@ -2,6 +2,9 @@
 Rewind Client
 =============
 
+.. image:: https://secure.travis-ci.org/JensRantil/rewind-client.png?branch=develop
+   :target: http://travis-ci.org/#!/JensRantil/rewind-client
+
 This is a Python client that talks to the `Rewind`_ event sourcing server.
 
 .. _Rewind: https://github.com/JensRantil/rewind
