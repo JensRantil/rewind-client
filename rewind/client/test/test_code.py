@@ -25,11 +25,16 @@ class TestCodeFormat(unittest.TestCase):
     @staticmethod
     def _get_all_pyfiles():
         """Return a list of all Python files in Rewind."""
+        while not os.getcwd().endswith('rewind'):
+            os.chdir('..')
+        os.chdir('..')
+
         pyfiles = []
         for dirpath, _, filenames in os.walk('rewind'):
             pyfiles.extend([os.path.join(dirpath, filename)
                             for filename in filenames
                             if filename.endswith('.py')])
+        assert len(pyfiles) > 0, os.getcwd()
         return pyfiles
 
     def testPep8Conformance(self):
