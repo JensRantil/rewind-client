@@ -79,10 +79,11 @@ class EventQuerier(object):
                 else:
                     # Python 2
                     eventid = data
+                assert isinstance(eventid, str), type(eventid)
+
                 assert self.socket.getsockopt(zmq.RCVMORE)
                 eventdata = self.socket.recv()
 
-                assert isinstance(eventid, str), type(eventid)
                 eventtuple = (eventid, eventdata)
                 events.append(eventtuple)
 
