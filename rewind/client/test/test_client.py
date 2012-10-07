@@ -99,27 +99,29 @@ class TestReplication(unittest.TestCase):
 
         self.context = zmq.Context(3)
 
-        self.transmitter = self.context.socket(zmq.PUSH)
+        transmitter = self.context.socket(zmq.PUSH)
+        transmitter.connect('tcp://127.0.0.1:8090')
+
+        # Making sure context.term() does not time out
+        # Could be removed if this test works as expected
+        transmitter.setsockopt(zmq.LINGER, 1000)
+
+        self.publisher = clients.EventPublisher(transmitter)
+
         self.receiver = self.context.socket(zmq.SUB)
         self.receiver.setsockopt(zmq.SUBSCRIBE, b'')
-
-        self.transmitter.connect('tcp://127.0.0.1:8090')
         self.receiver.connect('tcp://127.0.0.1:8091')
 
         # Time it takes to connect. This is particularly important so that the
         # receiver does not just receive the tail of the stream.
         time.sleep(0.5)
 
-        # Making sure context.term() does not time out
-        # Could be removed if this test works as expected
-        self.transmitter.setsockopt(zmq.LINGER, 1000)
-
     def testBasicEventProxying(self):
         """Asserting a single event is proxied."""
         eventid = b"abc12332fffgdgaab134432423"
         eventstring = b"THIS IS AN EVENT"
 
-        self.transmitter.send(eventstring)
+        self.publisher.send(eventstring)
 
         received_id = self.receiver.recv().decode()
         self.assertTrue(self.receiver.getsockopt(zmq.RCVMORE))
@@ -143,7 +145,7 @@ class TestReplication(unittest.TestCase):
 
         # Sending
         for msg in messages:
-            self.transmitter.send(msg)
+            self.publisher.send(msg)
 
         # Receiving and asserting correct messages
         eventids = []
@@ -162,7 +164,7 @@ class TestReplication(unittest.TestCase):
 
     def tearDown(self):
         """Shutting down Rewind test instance."""
-        self.transmitter.close()
+        self.publisher.close()
         self.receiver.close()
 
         self.assertTrue(self.rewind.isAlive(),

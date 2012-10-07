@@ -91,3 +91,30 @@ class EventQuerier(object):
                 more = False
 
         return done, events
+
+
+class EventPublisher(object):
+
+    """Publishes events in a format that Rewind can understand."""
+
+    def __init__(self, socket):
+        """Constructor.
+
+        Parameters:
+        socket -- a ZeroMQ PUB socket connected to a Rewind instance.
+
+        """
+        self._socket = socket
+
+    def send(self, event):
+        """Send an event to Rewind.
+
+        Parameters:
+        event -- an event. Must be either `str` (Py2) or `bytes` (Py3).
+
+        """
+        self._socket.send(event)
+
+    def close(self):
+        """Close the socket given to the constructor."""
+        self._socket.close()
