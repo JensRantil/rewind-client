@@ -93,6 +93,50 @@ class EventQuerier(object):
         return done, events
 
 
+def _get_single_streamed_event(streamsock):
+    """Retrieve a streamed event off a socket.
+
+    Parameters:
+    streamsock -- the stream socket to be reading from.
+
+    Returns a tuple consisting of:
+        eventid     -- the ID of the streamed event
+        lasteventid -- the ID of the previous streamed event. Can be empty for
+                       the first event (which pretty much never happens)
+        eventdata   -- the (serialized) data for the event.
+
+    """
+    eventid = streamsock.recv()
+    assert streamsock.getsockopt(zmq.RCVMORE)
+    lasteventid = streamsock.recv()
+    assert streamsock.getsockopt(zmq.RCVMORE)
+    eventdata = streamsock.recv()
+    assert not streamsock.getsockopt(zmq.RCVMORE)
+    return eventid, lasteventid, eventdata
+
+
+def yield_events_after(streamsock, reqsock, lasteventid=None):
+    """Generator that yields all the missed out events.
+
+    Parameters:
+    lasteventid -- the event id of the last seen event.
+
+    TODO: Handle when there is no lasteventid.
+
+    """
+    cureventid, preveventid, evdata = _get_single_streamed_event(streamsock)
+
+    if preveventid != lasteventid and preveventid != '':
+        # Making sure we did not reach high watermark inbetween here.
+        querier = EventQuerier(reqsock)
+        for qeventid, qeventdata in querier.query(lasteventid, preveventid):
+            # Note that this for loop's last event will be preveventid since
+            # its last element is inclusive.
+            yield qeventid, qeventdata
+
+    yield cureventid, evdata
+
+
 class EventPublisher(object):
 
     """Publishes events in a format that Rewind can understand."""
