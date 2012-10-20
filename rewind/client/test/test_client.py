@@ -20,6 +20,7 @@ import uuid
 import os
 import re
 
+import mock
 import zmq
 
 import rewind.client as clients
@@ -265,3 +266,23 @@ class TestQuerying(unittest.TestCase):
                          "Rewind should not have been running. It was.")
 
         self.context.term()
+
+
+class TestEventReception(unittest.TestCase):
+
+    """Test event reception using `yield_events_after`."""
+
+    def testRecvFirstEvent(self):
+        """Test fetching the absolutely first event."""
+        streamsock = mock.NonCallableMock()
+        streamsock.recv.side_effect = ['a', '', 'event1']
+        streamsock.getsockopt.side_effect = [True, True, False]
+
+        reqsock = mock.NonCallableMock()
+
+        results = []
+        for result in clients.yield_events_after(streamsock, reqsock):
+            results.append(result)
+        self.assertEqual(results, [('a', 'event1')])
+        assert streamsock.recv.called
+        assert not reqsock.recv.called
