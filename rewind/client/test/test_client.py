@@ -272,10 +272,18 @@ class TestEventReception(unittest.TestCase):
 
     """Test event reception using `yield_events_after`."""
 
+    def setUp(self):
+        """Set up the each test."""
+        self.events = [
+            ('a', '', 'event1'),
+            ('b', 'a', 'event2'),
+            ('c', 'b', 'event3'),
+        ]
+
     def testRecvFirstEvent(self):
         """Test fetching the absolutely first event."""
         streamsock = mock.NonCallableMock()
-        streamsock.recv.side_effect = ['a', '', 'event1']
+        streamsock.recv.side_effect = self.events[0]
         streamsock.getsockopt.side_effect = [True, True, False]
 
         reqsock = mock.NonCallableMock()
@@ -283,6 +291,22 @@ class TestEventReception(unittest.TestCase):
         results = []
         for result in clients.yield_events_after(streamsock, reqsock):
             results.append(result)
-        self.assertEqual(results, [('a', 'event1')])
+        self.assertEqual(results, [(self.events[0][0], self.events[0][2])])
+        assert streamsock.recv.called
+        assert not reqsock.recv.called
+
+    def testRecvNonFloodedNextEvent(self):
+        """Test receiving the next event through streaming socket only."""
+        streamsock = mock.NonCallableMock()
+        streamsock.recv.side_effect = self.events[2]
+        streamsock.getsockopt.side_effect = [True, True, False]
+
+        reqsock = mock.NonCallableMock()
+
+        results = []
+        for result in clients.yield_events_after(streamsock, reqsock,
+                                                 self.events[1][0]):
+            results.append(result)
+        self.assertEqual(results, [(self.events[2][0], self.events[2][2])])
         assert streamsock.recv.called
         assert not reqsock.recv.called
