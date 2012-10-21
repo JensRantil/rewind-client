@@ -6,7 +6,12 @@
 # for details.
 
 """Network clients used to communicate with the Rewind server."""
+import logging
+
 import zmq
+
+
+logger = logging.getLogger(__name__)
 
 
 class EventQuerier(object):
@@ -124,10 +129,17 @@ def yield_events_after(streamsock, reqsock, lasteventid=None):
     TODO: Handle when there is no lasteventid.
 
     """
+    funclogger = logger.getChild('yield_events_after')
+
     cureventid, preveventid, evdata = _get_single_streamed_event(streamsock)
 
     if preveventid != lasteventid and preveventid != '':
         # Making sure we did not reach high watermark inbetween here.
+
+        msg = ('Seem to have reached high watermark. Doing manually querying'
+               ' to catch up.')
+        funclogger.info(msg)
+
         querier = EventQuerier(reqsock)
         for qeventid, qeventdata in querier.query(lasteventid, preveventid):
             # Note that this for loop's last event will be preveventid since
