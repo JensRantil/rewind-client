@@ -251,7 +251,7 @@ class TestQuerying(unittest.TestCase):
 
     def testSyncNontExistentEvent(self):
         """Test when querying for non-existent event id."""
-        result = self.querier.query(from_="non-exist")
+        result = self.querier.query(from_=b"non-exist")
         self.assertRaises(clients.EventQuerier.QueryException,
                           list, result)
 
@@ -275,16 +275,16 @@ class TestEventReception(unittest.TestCase):
     def setUp(self):
         """Set up the each test."""
         self.events = [
-            ('a', '', 'event1'),
-            ('b', 'a', 'event2'),
-            ('c', 'b', 'event3'),
+            (b'a', b'', b'event1'),
+            (b'b', b'a', b'event2'),
+            (b'c', b'b', b'event3'),
         ]
 
     def testRecvFirstEvent(self):
         """Test fetching the absolutely first event."""
         streamsock = mock.NonCallableMock()
         streamsock.recv.side_effect = self.events[0]
-        streamsock.getsockopt.side_effect = [True, True, False]
+        streamsock.getsockopt.side_effect = [True, True, False, False]
 
         reqsock = mock.NonCallableMock()
 

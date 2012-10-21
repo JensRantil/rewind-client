@@ -32,8 +32,8 @@ class EventQuerier(object):
 
     def query(self, from_=None, to=None):
         """Make a query of events."""
-        assert from_ is None or isinstance(from_, str)
-        assert to is None or isinstance(to, str)
+        assert from_ is None or isinstance(from_, bytes)
+        assert to is None or isinstance(to, bytes)
         first_msg = True
         done = False
         while not done:
@@ -60,11 +60,11 @@ class EventQuerier(object):
           * `eventdata` is a byte string containing the serialized event.
 
         """
-        assert from_ is None or isinstance(from_, str), type(from_)
-        assert to is None or isinstance(to, str), type(to)
+        assert from_ is None or isinstance(from_, bytes), type(from_)
+        assert to is None or isinstance(to, bytes), type(to)
         self.socket.send(b'QUERY', zmq.SNDMORE)
-        self.socket.send(from_.encode() if from_ else b'', zmq.SNDMORE)
-        self.socket.send(to.encode() if to else b'')
+        self.socket.send(from_ if from_ else b'', zmq.SNDMORE)
+        self.socket.send(to if to else b'')
 
         more = True
         done = False
@@ -78,13 +78,8 @@ class EventQuerier(object):
                 assert not self.socket.getsockopt(zmq.RCVMORE)
                 raise self.QueryException("Could not query: {0}".format(data))
             else:
-                if not isinstance(data, str):
-                    assert isinstance(data, bytes)
-                    eventid = data.decode()
-                else:
-                    # Python 2
-                    eventid = data
-                assert isinstance(eventid, str), type(eventid)
+                eventid = data
+                assert isinstance(eventid, bytes), type(eventid)
 
                 assert self.socket.getsockopt(zmq.RCVMORE)
                 eventdata = self.socket.recv()
@@ -133,7 +128,7 @@ def yield_events_after(streamsock, reqsock, lasteventid=None):
 
     cureventid, preveventid, evdata = _get_single_streamed_event(streamsock)
 
-    if preveventid != lasteventid and preveventid != '':
+    if preveventid != lasteventid and preveventid != b'':
         # Making sure we did not reach high watermark inbetween here.
 
         msg = ('Seem to have reached high watermark. Doing manually querying'
