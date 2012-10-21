@@ -310,3 +310,35 @@ class TestEventReception(unittest.TestCase):
         self.assertEqual(results, [(self.events[2][0], self.events[2][2])])
         assert streamsock.recv.called
         assert not reqsock.recv.called
+
+    def testRecvFloodedSocket(self):
+        """Test receiving an event when watermark was passed."""
+        streamsock = mock.NonCallableMock()
+        streamsock.recv.side_effect = self.events[2]
+        streamsock.getsockopt.side_effect = [True, True, False]
+
+        reqsock = mock.NonCallableMock()
+        toreceive = (self.events[1][0], self.events[1][2], b'END')
+        reqsock.recv.side_effect = toreceive
+        # Need two 'False' here due to assertion logic in query code
+        reqsock.getsockopt.side_effect = [True, True, False, False]
+
+        results = []
+        for result in clients.yield_events_after(streamsock, reqsock,
+                                                 self.events[0][0]):
+            results.append(result)
+
+        # Implementation specific tests that have been used mostly for
+        # debugging of the code. Can be removed without being too worried.
+        assert not streamsock.send.called
+        reqsock.send.assert_has_calls([mock.call(b"QUERY", zmq.SNDMORE),
+                                       mock.call(self.events[0][0],
+                                                 zmq.SNDMORE),
+                                       mock.call(self.events[1][0])])
+        self.assertEqual(streamsock.recv.call_count, 3,
+                         streamsock.recv.call_args_list)
+        self.assertEqual(reqsock.recv.call_count, 3)
+
+        # The actual test that makes sure result is what it's supposed to be.
+        self.assertEqual(results, [(self.events[1][0], self.events[1][2]),
+                                   (self.events[2][0], self.events[2][2])])
