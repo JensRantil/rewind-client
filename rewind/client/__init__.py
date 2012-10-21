@@ -124,6 +124,7 @@ def yield_events_after(streamsock, reqsock, lasteventid=None):
     TODO: Handle when there is no lasteventid.
 
     """
+    assert lasteventid is None or isinstance(lasteventid, bytes)
     funclogger = logger.getChild('yield_events_after')
 
     cureventid, preveventid, evdata = _get_single_streamed_event(streamsock)
@@ -164,6 +165,7 @@ class EventPublisher(object):
         event -- an event. Must be either `str` (Py2) or `bytes` (Py3).
 
         """
+        assert isinstance(event, bytes), type(event)
         self._socket.send(event)
 
     def close(self):
