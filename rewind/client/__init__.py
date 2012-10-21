@@ -6,7 +6,12 @@
 # for details.
 
 """Network clients used to communicate with the Rewind server."""
+import logging
+
 import zmq
+
+
+logger = logging.getLogger(__name__)
 
 
 class EventQuerier(object):
@@ -27,8 +32,8 @@ class EventQuerier(object):
 
     def query(self, from_=None, to=None):
         """Make a query of events."""
-        assert from_ is None or isinstance(from_, str)
-        assert to is None or isinstance(to, str)
+        assert from_ is None or isinstance(from_, bytes)
+        assert to is None or isinstance(to, bytes)
         first_msg = True
         done = False
         while not done:
@@ -55,11 +60,11 @@ class EventQuerier(object):
           * `eventdata` is a byte string containing the serialized event.
 
         """
-        assert from_ is None or isinstance(from_, str), type(from_)
-        assert to is None or isinstance(to, str), type(to)
+        assert from_ is None or isinstance(from_, bytes), type(from_)
+        assert to is None or isinstance(to, bytes), type(to)
         self.socket.send(b'QUERY', zmq.SNDMORE)
-        self.socket.send(from_.encode() if from_ else b'', zmq.SNDMORE)
-        self.socket.send(to.encode() if to else b'')
+        self.socket.send(from_ if from_ else b'', zmq.SNDMORE)
+        self.socket.send(to if to else b'')
 
         more = True
         done = False
@@ -73,13 +78,8 @@ class EventQuerier(object):
                 assert not self.socket.getsockopt(zmq.RCVMORE)
                 raise self.QueryException("Could not query: {0}".format(data))
             else:
-                if not isinstance(data, str):
-                    assert isinstance(data, bytes)
-                    eventid = data.decode()
-                else:
-                    # Python 2
-                    eventid = data
-                assert isinstance(eventid, str), type(eventid)
+                eventid = data
+                assert isinstance(eventid, bytes), type(eventid)
 
                 assert self.socket.getsockopt(zmq.RCVMORE)
                 eventdata = self.socket.recv()
@@ -91,6 +91,57 @@ class EventQuerier(object):
                 more = False
 
         return done, events
+
+
+def _get_single_streamed_event(streamsock):
+    """Retrieve a streamed event off a socket.
+
+    Parameters:
+    streamsock -- the stream socket to be reading from.
+
+    Returns a tuple consisting of:
+        eventid     -- the ID of the streamed event
+        lasteventid -- the ID of the previous streamed event. Can be empty for
+                       the first event (which pretty much never happens)
+        eventdata   -- the (serialized) data for the event.
+
+    """
+    eventid = streamsock.recv()
+    assert streamsock.getsockopt(zmq.RCVMORE)
+    lasteventid = streamsock.recv()
+    assert streamsock.getsockopt(zmq.RCVMORE)
+    eventdata = streamsock.recv()
+    assert not streamsock.getsockopt(zmq.RCVMORE)
+    return eventid, lasteventid, eventdata
+
+
+def yield_events_after(streamsock, reqsock, lasteventid=None):
+    """Generator that yields all the missed out events.
+
+    Parameters:
+    lasteventid -- the event id of the last seen event.
+
+    TODO: Handle when there is no lasteventid.
+
+    """
+    funclogger = logger.getChild('yield_events_after')
+
+    cureventid, preveventid, evdata = _get_single_streamed_event(streamsock)
+
+    if preveventid != lasteventid and preveventid != b'':
+        # Making sure we did not reach high watermark inbetween here.
+
+        msg = ('Seem to have reached high watermark. Doing manually querying'
+               ' to catch up.')
+        funclogger.info(msg)
+
+        querier = EventQuerier(reqsock)
+        for qeventid, qeventdata in querier.query(lasteventid, preveventid):
+            # Note that this for loop's last event will be preveventid since
+            # its last element is inclusive.
+            yield qeventid, qeventdata
+
+    yield cureventid, evdata
 
 
 class EventPublisher(object):
