@@ -111,7 +111,6 @@ class TestReplication(unittest.TestCase):
 
     def testBasicEventProxying(self):
         """Asserting a single event is proxied."""
-        eventid = b"abc12332fffgdgaab134432423"
         eventstring = b"THIS IS AN EVENT"
 
         self.publisher.send(eventstring)
