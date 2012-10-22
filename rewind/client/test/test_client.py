@@ -93,14 +93,12 @@ class TestReplication(unittest.TestCase):
 
         self.context = zmq.Context(3)
 
-        transmitter = self.context.socket(zmq.PUSH)
-        transmitter.connect('tcp://127.0.0.1:8090')
+        self.transmitter = self.context.socket(zmq.PUSH)
+        self.transmitter.connect('tcp://127.0.0.1:8090')
 
         # Making sure context.term() does not time out
         # Could be removed if this test works as expected
-        transmitter.setsockopt(zmq.LINGER, 1000)
-
-        self.publisher = clients.EventPublisher(transmitter)
+        self.transmitter.setsockopt(zmq.LINGER, 1000)
 
         self.receiver = self.context.socket(zmq.SUB)
         self.receiver.setsockopt(zmq.SUBSCRIBE, b'')
@@ -114,7 +112,7 @@ class TestReplication(unittest.TestCase):
         """Asserting a single event is proxied."""
         eventstring = b"THIS IS AN EVENT"
 
-        self.publisher.send(eventstring)
+        clients.publish_event(self.transmitter, eventstring)
 
         received_id = self.receiver.recv().decode()
         self.assertTrue(self.receiver.getsockopt(zmq.RCVMORE))
@@ -138,7 +136,7 @@ class TestReplication(unittest.TestCase):
 
         # Sending
         for msg in messages:
-            self.publisher.send(msg)
+            clients.publish_event(self.transmitter, msg)
 
         # Receiving and asserting correct messages
         eventids = []
@@ -157,7 +155,7 @@ class TestReplication(unittest.TestCase):
 
     def tearDown(self):
         """Shutting down Rewind test instance."""
-        self.publisher.close()
+        self.transmitter.close()
         self.receiver.close()
 
         self.assertTrue(self.rewind.isAlive(),
@@ -182,9 +180,8 @@ class TestQuerying(unittest.TestCase):
 
         self.context = zmq.Context(3)
 
-        self.query_socket = self.context.socket(zmq.REQ)
-        self.query_socket.connect('tcp://127.0.0.1:8091')
-        self.querier = clients.EventQuerier(self.query_socket)
+        self.querysock = self.context.socket(zmq.REQ)
+        self.querysock.connect('tcp://127.0.0.1:8091')
 
         transmitter = self.context.socket(zmq.PUSH)
         transmitter.connect('tcp://127.0.0.1:8090')
@@ -211,7 +208,8 @@ class TestQuerying(unittest.TestCase):
     def testSyncAllPastEvents(self):
         """Test querying all events."""
         time.sleep(0.5)  # Max time to persist the messages
-        allevents = [event[1] for event in self.querier.query()]
+        allevents = [event[1]
+                     for event in clients.query_events(self.querysock)]
         self.assertEqual(allevents, self.sent)
 
         self.assertEqual(allevents, self.sent, "Elements don't match.")
@@ -219,37 +217,43 @@ class TestQuerying(unittest.TestCase):
     def testSyncEventsSince(self):
         """Test querying events after a certain time."""
         time.sleep(0.5)  # Max time to persist the messages
-        allevents = [event for event in self.querier.query()]
+        allevents = [event for event in clients.query_events(self.querysock)]
         from_ = allevents[3][0]
-        events = [event[1] for event in self.querier.query(from_=from_)]
+        events = [event[1] for event in clients.query_events(self.querysock,
+                                                             from_=from_)]
         self.assertEqual([event[1] for event in allevents[4:]], events)
 
     def testSyncEventsBefore(self):
         """Test querying events before a certain time."""
         time.sleep(0.5)  # Max time to persist the messages
-        allevents = [event for event in self.querier.query()]
+        allevents = [event
+                     for event in clients.query_events(self.querysock)]
         to = allevents[-3][0]
-        events = [event[1] for event in self.querier.query(to=to)]
+        events = [event[1]
+                  for event in clients.query_events(self.querysock, to=to)]
         self.assertEqual([event[1] for event in allevents[:-2]], events)
 
     def testSyncEventsBetween(self):
         """Test querying events a slice of the events."""
         time.sleep(0.5)  # Max time to persist the messages
-        allevents = [event for event in self.querier.query()]
+        allevents = [event for event in clients.query_events(self.querysock)]
         from_ = allevents[3][0]
         to = allevents[-3][0]
-        events = [event[1] for event in self.querier.query(from_=from_, to=to)]
+        events = [event[1]
+                  for event in clients.query_events(self.querysock,
+                                                    from_=from_,
+                                                    to=to)]
         self.assertEqual([event[1] for event in allevents[4:-2]], events)
 
     def testSyncNontExistentEvent(self):
         """Test when querying for non-existent event id."""
-        result = self.querier.query(from_=b"non-exist")
-        self.assertRaises(clients.EventQuerier.QueryException,
+        result = clients.query_events(self.querysock, from_=b"non-exist")
+        self.assertRaises(clients.QueryException,
                           list, result)
 
     def tearDown(self):
         """Close Rewind test instance."""
-        self.query_socket.close()
+        self.querysock.close()
 
         self.assertTrue(self.rewind.isAlive(),
                         "Did rewind crash? Not running.")

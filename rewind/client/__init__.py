@@ -14,83 +14,96 @@ import zmq
 logger = logging.getLogger(__name__)
 
 
-class EventQuerier(object):
+class QueryException(Exception):
 
-    """Client that queries events from rewind over ZeroMQ."""
+    """Raised when rewind server returns an error.
 
-    class QueryException(Exception):
-        """Raised when rewind server returns an error.
+    Usually this exception means you have used a non-existing query key.
 
-        Usually this exception means you have used a non-existing query key.
+    """
 
-        """
-        pass
+    pass
 
-    def __init__(self, socket):
-        """Constructor."""
-        self.socket = socket
 
-    def query(self, from_=None, to=None):
-        """Make a query of events."""
-        assert from_ is None or isinstance(from_, bytes)
-        assert to is None or isinstance(to, bytes)
-        first_msg = True
-        done = False
-        while not done:
-            # _real_query(...) are giving us events in small batches
-            done, events = self._real_query(from_, to)
-            for eventid, eventdata in events:
-                if first_msg:
-                    assert eventid != from_, "First message ID wrong"
-                    first_msg = False
-                from_ = eventid
-                yield (eventid, eventdata)
+def query_events(socket, from_=None, to=None):
+    """Yield a queried range of events.
 
-    def _real_query(self, from_, to):
-        """Make the actual query for events.
+    Parameters:
+    socket -- ZeroMQ socket to use. It must be previously connected to
+              a Rewind instance and of type REQ.
+    from_  -- the (optional) event id for the (chronologically) earliest end
+              of the range. It is exclusive. If not specified, or None, all
+              events from beginning of time are queried for.
+    to     -- the (optional) event id for the (chronologically) latest end of
+              the range. It is exclusive. If not specified, or None, all
+              events up to the latest event seen are queried for.
 
-        Since the Rewind streams events in batches, this method might not
-        receive all requested events.
+    Raises `QueryException` if a query failed. Usually this is raised because a
+    given `from_` or `to` does not exist in the event store.
 
-        Returns the tuple `(done, events)` where
-         * `done` is a boolean whether the limited query result reached the
-           end, or whether there's more events that need to be collected.
-         * `events` is a list of `(eventid, eventdata)` event tuples where
-          * `eventid` is a unique string the signifies the event; and
-          * `eventdata` is a byte string containing the serialized event.
+    This function returns nothing, but yields events that are returned.
 
-        """
-        assert from_ is None or isinstance(from_, bytes), type(from_)
-        assert to is None or isinstance(to, bytes), type(to)
-        self.socket.send(b'QUERY', zmq.SNDMORE)
-        self.socket.send(from_ if from_ else b'', zmq.SNDMORE)
-        self.socket.send(to if to else b'')
+    """
+    assert from_ is None or isinstance(from_, bytes)
+    assert to is None or isinstance(to, bytes)
+    first_msg = True
+    done = False
+    while not done:
+        # _real_query(...) are giving us events in small batches
+        done, events = _real_query(socket, from_, to)
+        for eventid, eventdata in events:
+            if first_msg:
+                assert eventid != from_, "First message ID wrong"
+                first_msg = False
+            from_ = eventid
+            yield (eventid, eventdata)
 
-        more = True
-        done = False
-        events = []
-        while more:
-            data = self.socket.recv()
-            if data == b"END":
-                assert not self.socket.getsockopt(zmq.RCVMORE)
-                done = True
-            elif data.startswith(b"ERROR"):
-                assert not self.socket.getsockopt(zmq.RCVMORE)
-                raise self.QueryException("Could not query: {0}".format(data))
-            else:
-                eventid = data
-                assert isinstance(eventid, bytes), type(eventid)
 
-                assert self.socket.getsockopt(zmq.RCVMORE)
-                eventdata = self.socket.recv()
+def _real_query(socket, from_, to):
+    """Make the actual query for events.
 
-                eventtuple = (eventid, eventdata)
-                events.append(eventtuple)
+    Since the Rewind streams events in batches, this method might not
+    receive all requested events.
 
-            if not self.socket.getsockopt(zmq.RCVMORE):
-                more = False
+    Returns the tuple `(done, events)` where
+     * `done` is a boolean whether the limited query result reached the
+       end, or whether there's more events that need to be collected.
+     * `events` is a list of `(eventid, eventdata)` event tuples where
+      * `eventid` is a unique string the signifies the event; and
+      * `eventdata` is a byte string containing the serialized event.
 
-        return done, events
+    """
+    assert from_ is None or isinstance(from_, bytes), type(from_)
+    assert to is None or isinstance(to, bytes), type(to)
+    socket.send(b'QUERY', zmq.SNDMORE)
+    socket.send(from_ if from_ else b'', zmq.SNDMORE)
+    socket.send(to if to else b'')
+
+    more = True
+    done = False
+    events = []
+    while more:
+        data = socket.recv()
+        if data == b"END":
+            assert not socket.getsockopt(zmq.RCVMORE)
+            done = True
+        elif data.startswith(b"ERROR"):
+            assert not socket.getsockopt(zmq.RCVMORE)
+            raise QueryException("Could not query: {0}".format(data))
+        else:
+            eventid = data
+            assert isinstance(eventid, bytes), type(eventid)
+
+            assert socket.getsockopt(zmq.RCVMORE)
+            eventdata = socket.recv()
+
+            eventtuple = (eventid, eventdata)
+            events.append(eventtuple)
+
+        if not socket.getsockopt(zmq.RCVMORE):
+            more = False
+
+    return done, events
 
 
 def _get_single_streamed_event(streamsock):
@@ -136,8 +149,8 @@ def yield_events_after(streamsock, reqsock, lasteventid=None):
                ' to catch up.')
         funclogger.info(msg)
 
-        querier = EventQuerier(reqsock)
-        for qeventid, qeventdata in querier.query(lasteventid, preveventid):
+        for qeventid, qeventdata in query_events(reqsock, lasteventid,
+                                                 preveventid):
             # Note that this for loop's last event will be preveventid since
             # its last element is inclusive.
             yield qeventid, qeventdata
@@ -145,29 +158,13 @@ def yield_events_after(streamsock, reqsock, lasteventid=None):
     yield cureventid, evdata
 
 
-class EventPublisher(object):
+def publish_event(socket, event):
+    """Publish a new event to Rewind.
 
-    """Publishes events in a format that Rewind can understand."""
+    Parameters:
+    socket -- a ZeroMQ PUB socket connected to a Rewind instance.
+    event  -- event to be published. Is instance of bytes.
 
-    def __init__(self, socket):
-        """Constructor.
-
-        Parameters:
-        socket -- a ZeroMQ PUB socket connected to a Rewind instance.
-
-        """
-        self._socket = socket
-
-    def send(self, event):
-        """Send an event to Rewind.
-
-        Parameters:
-        event -- an event. Must be either `str` (Py2) or `bytes` (Py3).
-
-        """
-        assert isinstance(event, bytes), type(event)
-        self._socket.send(event)
-
-    def close(self):
-        """Close the socket given to the constructor."""
-        self._socket.close()
+    """
+    assert isinstance(event, bytes), type(event)
+    socket.send(event)
