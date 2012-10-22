@@ -7,19 +7,13 @@
 
 """Test overall Rewind execution."""
 from __future__ import print_function
-import contextlib
-import itertools
-import hashlib
-import shutil
-import sys
-import tempfile
 import threading
 import time
 import unittest
 import uuid
-import os
 import re
 
+import mock
 import zmq
 
 import rewind.client as clients
@@ -100,26 +94,25 @@ class TestReplication(unittest.TestCase):
         self.context = zmq.Context(3)
 
         self.transmitter = self.context.socket(zmq.PUSH)
+        self.transmitter.connect('tcp://127.0.0.1:8090')
+
+        # Making sure context.term() does not time out
+        # Could be removed if this test works as expected
+        self.transmitter.setsockopt(zmq.LINGER, 1000)
+
         self.receiver = self.context.socket(zmq.SUB)
         self.receiver.setsockopt(zmq.SUBSCRIBE, b'')
-
-        self.transmitter.connect('tcp://127.0.0.1:8090')
         self.receiver.connect('tcp://127.0.0.1:8091')
 
         # Time it takes to connect. This is particularly important so that the
         # receiver does not just receive the tail of the stream.
         time.sleep(0.5)
 
-        # Making sure context.term() does not time out
-        # Could be removed if this test works as expected
-        self.transmitter.setsockopt(zmq.LINGER, 1000)
-
     def testBasicEventProxying(self):
         """Asserting a single event is proxied."""
-        eventid = b"abc12332fffgdgaab134432423"
         eventstring = b"THIS IS AN EVENT"
 
-        self.transmitter.send(eventstring)
+        clients.publish_event(self.transmitter, eventstring)
 
         received_id = self.receiver.recv().decode()
         self.assertTrue(self.receiver.getsockopt(zmq.RCVMORE))
@@ -143,7 +136,7 @@ class TestReplication(unittest.TestCase):
 
         # Sending
         for msg in messages:
-            self.transmitter.send(msg)
+            clients.publish_event(self.transmitter, msg)
 
         # Receiving and asserting correct messages
         eventids = []
@@ -187,9 +180,8 @@ class TestQuerying(unittest.TestCase):
 
         self.context = zmq.Context(3)
 
-        self.query_socket = self.context.socket(zmq.REQ)
-        self.query_socket.connect('tcp://127.0.0.1:8091')
-        self.querier = clients.EventQuerier(self.query_socket)
+        self.querysock = self.context.socket(zmq.REQ)
+        self.querysock.connect('tcp://127.0.0.1:8091')
 
         transmitter = self.context.socket(zmq.PUSH)
         transmitter.connect('tcp://127.0.0.1:8090')
@@ -216,7 +208,8 @@ class TestQuerying(unittest.TestCase):
     def testSyncAllPastEvents(self):
         """Test querying all events."""
         time.sleep(0.5)  # Max time to persist the messages
-        allevents = [event[1] for event in self.querier.query()]
+        allevents = [event[1]
+                     for event in clients.query_events(self.querysock)]
         self.assertEqual(allevents, self.sent)
 
         self.assertEqual(allevents, self.sent, "Elements don't match.")
@@ -224,37 +217,43 @@ class TestQuerying(unittest.TestCase):
     def testSyncEventsSince(self):
         """Test querying events after a certain time."""
         time.sleep(0.5)  # Max time to persist the messages
-        allevents = [event for event in self.querier.query()]
+        allevents = [event for event in clients.query_events(self.querysock)]
         from_ = allevents[3][0]
-        events = [event[1] for event in self.querier.query(from_=from_)]
+        events = [event[1] for event in clients.query_events(self.querysock,
+                                                             from_=from_)]
         self.assertEqual([event[1] for event in allevents[4:]], events)
 
     def testSyncEventsBefore(self):
         """Test querying events before a certain time."""
         time.sleep(0.5)  # Max time to persist the messages
-        allevents = [event for event in self.querier.query()]
+        allevents = [event
+                     for event in clients.query_events(self.querysock)]
         to = allevents[-3][0]
-        events = [event[1] for event in self.querier.query(to=to)]
+        events = [event[1]
+                  for event in clients.query_events(self.querysock, to=to)]
         self.assertEqual([event[1] for event in allevents[:-2]], events)
 
     def testSyncEventsBetween(self):
         """Test querying events a slice of the events."""
         time.sleep(0.5)  # Max time to persist the messages
-        allevents = [event for event in self.querier.query()]
+        allevents = [event for event in clients.query_events(self.querysock)]
         from_ = allevents[3][0]
         to = allevents[-3][0]
-        events = [event[1] for event in self.querier.query(from_=from_, to=to)]
+        events = [event[1]
+                  for event in clients.query_events(self.querysock,
+                                                    from_=from_,
+                                                    to=to)]
         self.assertEqual([event[1] for event in allevents[4:-2]], events)
 
     def testSyncNontExistentEvent(self):
         """Test when querying for non-existent event id."""
-        result = self.querier.query(from_="non-exist")
-        self.assertRaises(clients.EventQuerier.QueryException,
+        result = clients.query_events(self.querysock, from_=b"non-exist")
+        self.assertRaises(clients.QueryException,
                           list, result)
 
     def tearDown(self):
         """Close Rewind test instance."""
-        self.query_socket.close()
+        self.querysock.close()
 
         self.assertTrue(self.rewind.isAlive(),
                         "Did rewind crash? Not running.")
@@ -263,3 +262,79 @@ class TestQuerying(unittest.TestCase):
                          "Rewind should not have been running. It was.")
 
         self.context.term()
+
+
+class TestEventReception(unittest.TestCase):
+
+    """Test event reception using `yield_events_after`."""
+
+    def setUp(self):
+        """Set up the each test."""
+        self.events = [
+            (b'a', b'', b'event1'),
+            (b'b', b'a', b'event2'),
+            (b'c', b'b', b'event3'),
+        ]
+
+    def testRecvFirstEvent(self):
+        """Test fetching the absolutely first event."""
+        streamsock = mock.NonCallableMock()
+        streamsock.recv.side_effect = self.events[0]
+        streamsock.getsockopt.side_effect = [True, True, False, False]
+
+        reqsock = mock.NonCallableMock()
+
+        results = []
+        for result in clients.yield_events_after(streamsock, reqsock):
+            results.append(result)
+        self.assertEqual(results, [(self.events[0][0], self.events[0][2])])
+        assert streamsock.recv.called
+        assert not reqsock.recv.called
+
+    def testRecvNonFloodedNextEvent(self):
+        """Test receiving the next event through streaming socket only."""
+        streamsock = mock.NonCallableMock()
+        streamsock.recv.side_effect = self.events[2]
+        streamsock.getsockopt.side_effect = [True, True, False]
+
+        reqsock = mock.NonCallableMock()
+
+        results = []
+        for result in clients.yield_events_after(streamsock, reqsock,
+                                                 self.events[1][0]):
+            results.append(result)
+        self.assertEqual(results, [(self.events[2][0], self.events[2][2])])
+        assert streamsock.recv.called
+        assert not reqsock.recv.called
+
+    def testRecvFloodedSocket(self):
+        """Test receiving an event when watermark was passed."""
+        streamsock = mock.NonCallableMock()
+        streamsock.recv.side_effect = self.events[2]
+        streamsock.getsockopt.side_effect = [True, True, False]
+
+        reqsock = mock.NonCallableMock()
+        toreceive = (self.events[1][0], self.events[1][2], b'END')
+        reqsock.recv.side_effect = toreceive
+        # Need two 'False' here due to assertion logic in query code
+        reqsock.getsockopt.side_effect = [True, True, False, False]
+
+        results = []
+        for result in clients.yield_events_after(streamsock, reqsock,
+                                                 self.events[0][0]):
+            results.append(result)
+
+        # Implementation specific tests that have been used mostly for
+        # debugging of the code. Can be removed without being too worried.
+        assert not streamsock.send.called
+        reqsock.send.assert_has_calls([mock.call(b"QUERY", zmq.SNDMORE),
+                                       mock.call(self.events[0][0],
+                                                 zmq.SNDMORE),
+                                       mock.call(self.events[1][0])])
+        self.assertEqual(streamsock.recv.call_count, 3,
+                         streamsock.recv.call_args_list)
+        self.assertEqual(reqsock.recv.call_count, 3)
+
+        # The actual test that makes sure result is what it's supposed to be.
+        self.assertEqual(results, [(self.events[1][0], self.events[1][2]),
+                                   (self.events[2][0], self.events[2][2])])
