@@ -16,7 +16,7 @@ system into two parts:
 * A *read side* that listens to incoming events from the write side. The
   read side is optimized for fast reads.
 
-A core concept in CQRS is the *event store* which sits inbetween the
+A common concept in CQRS is an *event store* which sits inbetween the
 write and the read side. The event store takes care of three things:
 
 * persisting all events to disk.
@@ -28,6 +28,7 @@ write and the read side. The event store takes care of three things:
   can be synced back on track and new components can be brought back in
   play.
 
-``rewind-client`` is the Python client for ``rewind``. ``rewind`` is an
-event store application that talks ZeroMQ. It is written in Python and
-supports multiple storage backends.
+*rewind-client* is the Python client for `Rewind`_, a standalone event
+store application that is written in Python and talks ZeroMQ.
+
+.. _Rewind: https://github.com/JensRantil/rewind
