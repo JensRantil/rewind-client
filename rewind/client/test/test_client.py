@@ -149,7 +149,7 @@ class TestReplication(unittest.TestCase):
         received_messages = []
         previd = b''
         for msg in messages:
-            received_id = self.receiver.recv().decode()
+            received_id = self.receiver.recv()
             self.assertTrue(bool(self.receiver.getsockopt(zmq.RCVMORE)))
             received_prev_id = self.receiver.recv()
 
@@ -160,7 +160,8 @@ class TestReplication(unittest.TestCase):
             received_string = self.receiver.recv()
             received_messages.append(received_string)
             self.assertFalse(bool(self.receiver.getsockopt(zmq.RCVMORE)))
-            self.assertIsNotNone(re.match(self.UUID_REGEXP, received_id))
+            self.assertIsNotNone(re.match(self.UUID_REGEXP,
+                                          received_id.decode()))
             eventids.append(received_id)
             self.assertEqual(received_string, msg)
 
