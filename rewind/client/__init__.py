@@ -162,9 +162,13 @@ def publish_event(socket, event):
     """Publish a new event to Rewind.
 
     Parameters:
-    socket -- a ZeroMQ PUB socket connected to a Rewind instance.
+    socket -- a ZeroMQ REQ socket connected to a Rewind instance.
     event  -- event to be published. Is instance of bytes.
 
     """
     assert isinstance(event, bytes), type(event)
+    socket.send(b'PUBLISH', zmq.SNDMORE)
     socket.send(event)
+    response = socket.recv()
+    assert response == b'PUBLISHED'
+    assert not socket.getsockopt(zmq.RCVMORE)
