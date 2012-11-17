@@ -68,10 +68,13 @@ class _RewindRunnerThread(threading.Thread):
 
         if context is None:
             context = zmq.Context(1)
-        socket = context.socket(zmq.PUSH)
+        socket = context.socket(zmq.REQ)
         socket.setsockopt(zmq.LINGER, 1000)
         socket.connect(self._exit_addr)
         socket.send(_RewindRunnerThread._EXIT_CODE)
+        resp = socket.recv()
+        assert resp == b'QUIT'
+        assert not socket.getsockopt(zmq.RCVMORE)
         time.sleep(0.5)  # Acceptable exit time
         assert not self.isAlive()
         socket.close()
