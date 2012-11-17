@@ -86,14 +86,14 @@ class TestReplication(unittest.TestCase):
 
     def setUp(self):
         """Starting a Rewind instance to test replication."""
-        args = ['--incoming-bind-endpoint', 'tcp://127.0.0.1:8090',
+        args = ['--query-bind-endpoint', 'tcp://127.0.0.1:8090',
                 '--streaming-bind-endpoint', 'tcp://127.0.0.1:8091']
         self.rewind = _RewindRunnerThread(args, 'tcp://127.0.0.1:8090')
         self.rewind.start()
 
         self.context = zmq.Context(3)
 
-        self.transmitter = self.context.socket(zmq.PUSH)
+        self.transmitter = self.context.socket(zmq.REQ)
         self.transmitter.connect('tcp://127.0.0.1:8090')
 
         # Making sure context.term() does not time out
@@ -173,22 +173,14 @@ class TestQuerying(unittest.TestCase):
 
     def setUp(self):
         """Start and populate a Rewind instance to test querying."""
-        args = ['--incoming-bind-endpoint', 'tcp://127.0.0.1:8090',
-                '--query-bind-endpoint', 'tcp://127.0.0.1:8091']
+        args = ['--query-bind-endpoint', 'tcp://127.0.0.1:8090']
         self.rewind = _RewindRunnerThread(args, 'tcp://127.0.0.1:8090')
         self.rewind.start()
 
         self.context = zmq.Context(3)
 
         self.querysock = self.context.socket(zmq.REQ)
-        self.querysock.connect('tcp://127.0.0.1:8091')
-
-        transmitter = self.context.socket(zmq.PUSH)
-        transmitter.connect('tcp://127.0.0.1:8090')
-
-        # Making sure context.term() does not time out
-        # Could be removed if this test works as expected
-        transmitter.setsockopt(zmq.LINGER, 1000)
+        self.querysock.connect('tcp://127.0.0.1:8090')
 
         ids = [uuid.uuid1().hex for i in range(200)]
         self.assertEqual(len(ids), len(set(ids)), 'There were duplicate IDs.'
@@ -201,9 +193,12 @@ class TestQuerying(unittest.TestCase):
         self.sent = []
         for id in ids:
             eventstr = "Event with id '{0}'".format(id).encode()
-            transmitter.send(eventstr)
+            self.querysock.send(b"PUBLISH", zmq.SNDMORE)
+            self.querysock.send(eventstr)
+            response = self.querysock.recv()
+            assert response == b'PUBLISHED'
+            assert not self.querysock.getsockopt(zmq.RCVMORE)
             self.sent.append(eventstr)
-        transmitter.close()
 
     def testSyncAllPastEvents(self):
         """Test querying all events."""
