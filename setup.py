@@ -10,7 +10,7 @@ if py_version <= (2, 6):
 
 setup(
     name='rewind-client',
-    version='0.1.3',
+    version='0.2.0',
     author='Jens Rantil',
     author_email='jens.rantil@gmail.com',
     license='GNU AGPL, version 3',
@@ -44,7 +44,7 @@ setup(
         "pyzmq==2.2.0.1",
     ],
     tests_require=[
-        "rewind==0.1.6",
+        "rewind==0.2.0",
         "mock==0.8",
         "pep8==1.3.3",
         "pep257==0.2.0",

@@ -68,10 +68,13 @@ class _RewindRunnerThread(threading.Thread):
 
         if context is None:
             context = zmq.Context(1)
-        socket = context.socket(zmq.PUSH)
+        socket = context.socket(zmq.REQ)
         socket.setsockopt(zmq.LINGER, 1000)
         socket.connect(self._exit_addr)
         socket.send(_RewindRunnerThread._EXIT_CODE)
+        resp = socket.recv()
+        assert resp == b'QUIT'
+        assert not socket.getsockopt(zmq.RCVMORE)
         time.sleep(0.5)  # Acceptable exit time
         assert not self.isAlive()
         socket.close()
@@ -86,14 +89,14 @@ class TestReplication(unittest.TestCase):
 
     def setUp(self):
         """Starting a Rewind instance to test replication."""
-        args = ['--incoming-bind-endpoint', 'tcp://127.0.0.1:8090',
+        args = ['--query-bind-endpoint', 'tcp://127.0.0.1:8090',
                 '--streaming-bind-endpoint', 'tcp://127.0.0.1:8091']
         self.rewind = _RewindRunnerThread(args, 'tcp://127.0.0.1:8090')
         self.rewind.start()
 
         self.context = zmq.Context(3)
 
-        self.transmitter = self.context.socket(zmq.PUSH)
+        self.transmitter = self.context.socket(zmq.REQ)
         self.transmitter.connect('tcp://127.0.0.1:8090')
 
         # Making sure context.term() does not time out
@@ -115,9 +118,12 @@ class TestReplication(unittest.TestCase):
         clients.publish_event(self.transmitter, eventstring)
 
         received_id = self.receiver.recv().decode()
-        self.assertTrue(self.receiver.getsockopt(zmq.RCVMORE))
+        self.assertTrue(bool(self.receiver.getsockopt(zmq.RCVMORE)))
+        prev_received_id = self.receiver.recv()
+        self.assertEquals(prev_received_id, b'')
+        self.assertTrue(bool(self.receiver.getsockopt(zmq.RCVMORE)))
         received_string = self.receiver.recv()
-        self.assertFalse(self.receiver.getsockopt(zmq.RCVMORE))
+        self.assertFalse(bool(self.receiver.getsockopt(zmq.RCVMORE)))
 
         self.assertIsNotNone(re.match(self.UUID_REGEXP, received_id))
         self.assertEqual(received_string, eventstring)
@@ -140,18 +146,28 @@ class TestReplication(unittest.TestCase):
 
         # Receiving and asserting correct messages
         eventids = []
+        received_messages = []
+        previd = b''
         for msg in messages:
             received_id = self.receiver.recv().decode()
-            self.assertTrue(self.receiver.getsockopt(zmq.RCVMORE))
-            received_string = self.receiver.recv()
-            self.assertFalse(self.receiver.getsockopt(zmq.RCVMORE))
+            self.assertTrue(bool(self.receiver.getsockopt(zmq.RCVMORE)))
+            received_prev_id = self.receiver.recv()
 
+            self.assertEquals(received_prev_id, previd)
+            previd = received_id
+
+            self.assertTrue(bool(self.receiver.getsockopt(zmq.RCVMORE)))
+            received_string = self.receiver.recv()
+            received_messages.append(received_string)
+            self.assertFalse(bool(self.receiver.getsockopt(zmq.RCVMORE)))
             self.assertIsNotNone(re.match(self.UUID_REGEXP, received_id))
             eventids.append(received_id)
             self.assertEqual(received_string, msg)
 
         self.assertEqual(len(set(eventids)), len(eventids),
                          "Found duplicate event id!")
+        self.assertEqual(messages, received_messages,
+                         "Not all messages received")
 
     def tearDown(self):
         """Shutting down Rewind test instance."""
@@ -173,22 +189,14 @@ class TestQuerying(unittest.TestCase):
 
     def setUp(self):
         """Start and populate a Rewind instance to test querying."""
-        args = ['--incoming-bind-endpoint', 'tcp://127.0.0.1:8090',
-                '--query-bind-endpoint', 'tcp://127.0.0.1:8091']
+        args = ['--query-bind-endpoint', 'tcp://127.0.0.1:8090']
         self.rewind = _RewindRunnerThread(args, 'tcp://127.0.0.1:8090')
         self.rewind.start()
 
         self.context = zmq.Context(3)
 
         self.querysock = self.context.socket(zmq.REQ)
-        self.querysock.connect('tcp://127.0.0.1:8091')
-
-        transmitter = self.context.socket(zmq.PUSH)
-        transmitter.connect('tcp://127.0.0.1:8090')
-
-        # Making sure context.term() does not time out
-        # Could be removed if this test works as expected
-        transmitter.setsockopt(zmq.LINGER, 1000)
+        self.querysock.connect('tcp://127.0.0.1:8090')
 
         ids = [uuid.uuid1().hex for i in range(200)]
         self.assertEqual(len(ids), len(set(ids)), 'There were duplicate IDs.'
@@ -201,9 +209,12 @@ class TestQuerying(unittest.TestCase):
         self.sent = []
         for id in ids:
             eventstr = "Event with id '{0}'".format(id).encode()
-            transmitter.send(eventstr)
+            self.querysock.send(b"PUBLISH", zmq.SNDMORE)
+            self.querysock.send(eventstr)
+            response = self.querysock.recv()
+            assert response == b'PUBLISHED'
+            assert not self.querysock.getsockopt(zmq.RCVMORE)
             self.sent.append(eventstr)
-        transmitter.close()
 
     def testSyncAllPastEvents(self):
         """Test querying all events."""
