@@ -118,9 +118,12 @@ class TestReplication(unittest.TestCase):
         clients.publish_event(self.transmitter, eventstring)
 
         received_id = self.receiver.recv().decode()
-        self.assertTrue(self.receiver.getsockopt(zmq.RCVMORE))
+        self.assertTrue(bool(self.receiver.getsockopt(zmq.RCVMORE)))
+        prev_received_id = self.receiver.recv()
+        self.assertEquals(prev_received_id, b'')
+        self.assertTrue(bool(self.receiver.getsockopt(zmq.RCVMORE)))
         received_string = self.receiver.recv()
-        self.assertFalse(self.receiver.getsockopt(zmq.RCVMORE))
+        self.assertFalse(bool(self.receiver.getsockopt(zmq.RCVMORE)))
 
         self.assertIsNotNone(re.match(self.UUID_REGEXP, received_id))
         self.assertEqual(received_string, eventstring)
@@ -143,18 +146,28 @@ class TestReplication(unittest.TestCase):
 
         # Receiving and asserting correct messages
         eventids = []
+        received_messages = []
+        previd = b''
         for msg in messages:
             received_id = self.receiver.recv().decode()
-            self.assertTrue(self.receiver.getsockopt(zmq.RCVMORE))
-            received_string = self.receiver.recv()
-            self.assertFalse(self.receiver.getsockopt(zmq.RCVMORE))
+            self.assertTrue(bool(self.receiver.getsockopt(zmq.RCVMORE)))
+            received_prev_id = self.receiver.recv()
 
+            self.assertEquals(received_prev_id, previd)
+            previd = received_id
+
+            self.assertTrue(bool(self.receiver.getsockopt(zmq.RCVMORE)))
+            received_string = self.receiver.recv()
+            received_messages.append(received_string)
+            self.assertFalse(bool(self.receiver.getsockopt(zmq.RCVMORE)))
             self.assertIsNotNone(re.match(self.UUID_REGEXP, received_id))
             eventids.append(received_id)
             self.assertEqual(received_string, msg)
 
         self.assertEqual(len(set(eventids)), len(eventids),
                          "Found duplicate event id!")
+        self.assertEqual(messages, received_messages,
+                         "Not all messages received")
 
     def tearDown(self):
         """Shutting down Rewind test instance."""
