@@ -7,6 +7,19 @@
 
 """Test overall Rewind execution."""
 from __future__ import print_function
+
+try:
+    # Python < 3
+    import ConfigParser as configparser
+except ImportError:
+    # Python >= 3
+    import configparser
+try:
+    # Python < 3
+    import StringIO as io
+except ImportError:
+    # Python >= 3
+    import io
 import threading
 import time
 import unittest
@@ -17,7 +30,7 @@ import mock
 import zmq
 
 import rewind.client as clients
-import rewind.server.rewind as rewind
+import rewind.server.main as main
 
 
 class _RewindRunnerThread(threading.Thread):
@@ -32,34 +45,62 @@ class _RewindRunnerThread(threading.Thread):
 
     _EXIT_CODE = b'EXIT'
 
-    def __init__(self, cmdline_args, exit_addr=None):
+    def __init__(self, bootparams, exit_addr=None):
         """Constructor.
 
         Parameters:
-        cmdline_args -- command line arguments used to execute the rewind.
-        exit_addr    -- the ZeroMQ address used to send the exit message to.
+        bootparams -- Can be either a dictionary of configuration options
+                      grouped by section, or a list of command line argument
+                      strings.
+        exit_addr  -- the ZeroMQ address used to send the exit message to.
 
         """
+        assert isinstance(bootparams, list) or isinstance(bootparams, dict)
         thread = self
 
-        assert '--exit-codeword' not in cmdline_args, \
-            "'--exit-codeword' is added by _RewindRunnerThread. Not elsewhere"
-        cmdline_args = (['--exit-codeword',
-                         _RewindRunnerThread._EXIT_CODE.decode()] +
-                        cmdline_args)
+        if isinstance(bootparams, list):
+            assert '--exit-codeword' not in bootparams, \
+                   ("'--exit-codeword' is added by _RewindRunnerThread."
+                    " Not from elsewhere.")
+            args = (main.main,
+                    bootparams + ['--exit-codeword',
+                                  _RewindRunnerThread._EXIT_CODE.decode()])
+        else:
+            assert isinstance(bootparams, dict)
+            bootparams = dict(bootparams)
 
-        def exitcode_runner(*args, **kwargs):
+            if "general" not in bootparams:
+                bootparams['general'] = {}
+            EXCODE = _RewindRunnerThread._EXIT_CODE
+            bootparams['general']['exit-code'] = EXCODE
+
+            rows = []
+            for section, keyvals in bootparams.items():
+                rows.append("[{0}]".format(section))
+                for key, val in keyvals.items():
+                    rows.append("{0}={1}".format(key, val))
+
+            configfilecontent = "\n".join(rows)
+            options = configparser.SafeConfigParser()
+            options.readfp(io.StringIO(configfilecontent))
+
+            args = (main.run, options, _RewindRunnerThread._EXIT_CODE.decode())
+
+        def exitcode_runner(func, *args, **kwargs):
             try:
-                thread.exit_code = rewind.main(*args, **kwargs)
+                thread.exit_code = func(*args, **kwargs)
             except SystemExit as e:
+                print("Runner made SystemExit.")
                 thread.exit_code = e.code
+            except Exception as e:
+                print("Exception happened:", e)
+                traceback.print_exc()
+                thread.exit_code = None
             else:
-                # If SystemExit is never thrown Python would have exitted with
-                # exit code 0
-                thread.exit_code = 0
+                print("Clean exit of runner.")
         super(_RewindRunnerThread, self).__init__(target=exitcode_runner,
                                                   name="test-rewind",
-                                                  args=(cmdline_args,))
+                                                  args=args)
         self._exit_addr = exit_addr
 
     def stop(self, context=None):
@@ -69,12 +110,8 @@ class _RewindRunnerThread(threading.Thread):
         if context is None:
             context = zmq.Context(1)
         socket = context.socket(zmq.REQ)
-        socket.setsockopt(zmq.LINGER, 1000)
         socket.connect(self._exit_addr)
         socket.send(_RewindRunnerThread._EXIT_CODE)
-        resp = socket.recv()
-        assert resp == b'QUIT'
-        assert not socket.getsockopt(zmq.RCVMORE)
         time.sleep(0.5)  # Acceptable exit time
         assert not self.isAlive()
         socket.close()
@@ -89,8 +126,12 @@ class TestReplication(unittest.TestCase):
 
     def setUp(self):
         """Starting a Rewind instance to test replication."""
-        args = ['--query-bind-endpoint', 'tcp://127.0.0.1:8090',
-                '--streaming-bind-endpoint', 'tcp://127.0.0.1:8091']
+        args = {
+            'general': {
+                'query-bind-endpoint': 'tcp://127.0.0.1:8090',
+                'streaming-bind-endpoint': 'tcp://127.0.0.1:8091',
+            }
+        }
         self.rewind = _RewindRunnerThread(args, 'tcp://127.0.0.1:8090')
         self.rewind.start()
 
@@ -149,7 +190,7 @@ class TestReplication(unittest.TestCase):
         received_messages = []
         previd = b''
         for msg in messages:
-            received_id = self.receiver.recv().decode()
+            received_id = self.receiver.recv()
             self.assertTrue(bool(self.receiver.getsockopt(zmq.RCVMORE)))
             received_prev_id = self.receiver.recv()
 
@@ -160,7 +201,8 @@ class TestReplication(unittest.TestCase):
             received_string = self.receiver.recv()
             received_messages.append(received_string)
             self.assertFalse(bool(self.receiver.getsockopt(zmq.RCVMORE)))
-            self.assertIsNotNone(re.match(self.UUID_REGEXP, received_id))
+            self.assertIsNotNone(re.match(self.UUID_REGEXP,
+                                          received_id.decode()))
             eventids.append(received_id)
             self.assertEqual(received_string, msg)
 
@@ -189,7 +231,11 @@ class TestQuerying(unittest.TestCase):
 
     def setUp(self):
         """Start and populate a Rewind instance to test querying."""
-        args = ['--query-bind-endpoint', 'tcp://127.0.0.1:8090']
+        args = {
+            'general': {
+                'query-bind-endpoint': 'tcp://127.0.0.1:8090',
+            }
+        }
         self.rewind = _RewindRunnerThread(args, 'tcp://127.0.0.1:8090')
         self.rewind.start()
 
